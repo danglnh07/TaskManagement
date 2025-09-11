@@ -1,4 +1,4 @@
-package security
+package util
 
 import (
 	"os"
@@ -22,7 +22,7 @@ type Config struct {
 	AppPassword string
 
 	// Security config
-	SecretKey              string
+	SecretKey              []byte
 	TokenExpiration        time.Duration
 	RefreshTokenExpiration time.Duration
 
@@ -47,7 +47,7 @@ func LoadConfig(path string) *Config {
 			SMTPPort:               "587",
 			Email:                  os.Getenv("EMAIL"),
 			AppPassword:            os.Getenv("APP_PASSWORD"),
-			SecretKey:              os.Getenv("SECRET_KEY"),
+			SecretKey:              []byte(os.Getenv("SECRET_KEY")),
 			TokenExpiration:        time.Hour,
 			RefreshTokenExpiration: time.Hour * 24,
 			GoogleClientID:         os.Getenv("GOOGLE_CLIENT_ID"),
@@ -90,7 +90,7 @@ func LoadConfig(path string) *Config {
 		SMTPPort:               os.Getenv("SMTP_PORT"),
 		Email:                  os.Getenv("EMAIL"),
 		AppPassword:            os.Getenv("APP_PASSWORD"),
-		SecretKey:              os.Getenv("SECRET_KEY"),
+		SecretKey:              []byte(os.Getenv("SECRET_KEY")),
 		TokenExpiration:        time.Minute * time.Duration(tokenExpiration),
 		RefreshTokenExpiration: time.Minute * time.Duration(refreshTokenExpiration),
 		GoogleClientID:         os.Getenv("GOOGLE_CLIENT_ID"),

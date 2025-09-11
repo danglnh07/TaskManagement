@@ -1,17 +1,17 @@
 package db
 
 import (
-	"github.com/danglnh07/TaskManagement/service/security"
+	"github.com/danglnh07/TaskManagement/util"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 type Queries struct {
 	db     *gorm.DB
-	config *security.Config
+	config *util.Config
 }
 
-func NewQueries(config *security.Config) *Queries {
+func NewQueries(config *util.Config) *Queries {
 	return &Queries{
 		config: config,
 	}

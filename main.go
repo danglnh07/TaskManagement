@@ -4,8 +4,9 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/danglnh07/TaskManagement/api"
 	"github.com/danglnh07/TaskManagement/db"
-	"github.com/danglnh07/TaskManagement/service/security"
+	"github.com/danglnh07/TaskManagement/util"
 )
 
 func main() {
@@ -13,7 +14,7 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	// Load config
-	config := security.LoadConfig(".env")
+	config := util.LoadConfig(".env")
 
 	// Initialize queries and connect database
 	queries := db.NewQueries(config)
@@ -29,4 +30,11 @@ func main() {
 	}
 
 	logger.Info("Initialize database successfully")
+
+	// Initialize server and run
+	server := api.NewServer(logger, config)
+	if err := server.Start(); err != nil {
+		logger.Error("Failed to start server or server shutdown unexpectedly", "error", err)
+		os.Exit(1)
+	}
 }
