@@ -23,13 +23,13 @@ func TestMain(m *testing.M) {
 
 func TestToken(t *testing.T) {
 	// Create test data
-	username := util.RandomString(10)
+	id := uint(rand.Intn(1000))
 	role := []db.Role{db.User, db.Admin}[rand.Intn(2)]
 	tokenType := []TokenType{AccessToken, RefreshToken}[rand.Intn(2)]
 	version := rand.Intn(10)
 
 	// Create token
-	token, err := service.CreateToken(username, role, tokenType, version)
+	token, err := service.CreateToken(id, role, tokenType, version)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -39,7 +39,7 @@ func TestToken(t *testing.T) {
 	require.NotEmpty(t, result)
 
 	// Compare the test data with the extract claims
-	require.Equal(t, username, result.Username)
+	require.Equal(t, id, result.ID)
 	require.Equal(t, role, result.Role)
 	require.Equal(t, tokenType, result.TokenType)
 	require.Equal(t, version, result.Version)

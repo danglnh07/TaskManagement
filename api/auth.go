@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +14,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+type OAuthState struct {
+	Provider db.OAuthProvider
+	Role     db.Role
+}
 
 type TokenResponse struct {
 	AccessToken string `json:"access_token"`
@@ -34,6 +41,20 @@ type OAuthProvider interface {
 func (server *Server) HandleAuth(ctx *gin.Context) {
 	// Get which OAuth provider
 	provider := db.OAuthProvider(ctx.Query("provider"))
+	role := db.Role(ctx.Query("role"))
+
+	// Build the state for OAuth
+	state := OAuthState{
+		Provider: provider,
+		Role:     role,
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		server.logger.Error("GET /api/auth: failed to marshal state data", "error", err)
+		ctx.JSON(http.StatusInternalServerError, ErrorResponse{"Internal server error"})
+		return
+	}
+	stateStr := base64.URLEncoding.EncodeToString(data)
 
 	// Based on which provider, construct the URL corresponding
 	switch provider {
@@ -51,7 +72,7 @@ func (server *Server) HandleAuth(ctx *gin.Context) {
 		query.Set("redirect_uri", fmt.Sprintf("%s/oauth2/callback", server.config.BaseURL))
 		query.Set("response_type", "code")
 		query.Set("scope", "openid email profile")
-		query.Set("state", string(db.Google))
+		query.Set("state", stateStr)
 		url.RawQuery = query.Encode()
 
 		// Redirect the client to the real Google OAuth
@@ -69,7 +90,7 @@ func (server *Server) HandleAuth(ctx *gin.Context) {
 		query.Set("client_id", server.config.GithubClientID)
 		query.Set("redirect_uri", fmt.Sprintf("%s/oauth2/callback", server.config.BaseURL))
 		query.Set("scope", "read:user+user:email")
-		query.Set("state", string(db.GitHub))
+		query.Set("state", stateStr)
 		url.RawQuery = query.Encode()
 
 		// Redirect the client to the real GitHub OAuth
@@ -86,10 +107,22 @@ type AuthResponse struct {
 }
 
 func (server *Server) HandleCallback(ctx *gin.Context) {
-	// Get the state
-	state := db.OAuthProvider(ctx.Query("state"))
+	// Get the state and parse it
+	stateRaw := ctx.Query("state")
+	bytes, err := base64.URLEncoding.DecodeString(stateRaw)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, ErrorResponse{"Invalid state"})
+		return
+	}
+	var state OAuthState
+	if err = json.Unmarshal(bytes, &state); err != nil {
+		ctx.JSON(http.StatusBadRequest, ErrorResponse{"Invalid state"})
+		return
+	}
+
+	// Build OAuth provider based on state.Provider
 	var provider OAuthProvider
-	switch state {
+	switch state.Provider {
 	case db.Google:
 		provider = &GoogleProvider{
 			ClientID:     server.config.GoogleClientID,
@@ -141,7 +174,7 @@ func (server *Server) HandleCallback(ctx *gin.Context) {
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		acc.Username = data.Username
 		acc.Email = data.Email
-		acc.Role = db.User
+		acc.Role = state.Role
 		acc.OauthProvider = db.OAuthProvider(provider.Name())
 		acc.OauthProviderID = data.ID
 		acc.TokenVersion = 1
@@ -156,14 +189,14 @@ func (server *Server) HandleCallback(ctx *gin.Context) {
 	}
 
 	// Create access token and refresh token
-	accessToken, err := server.jwtService.CreateToken(acc.Username, acc.Role, security.AccessToken, acc.TokenVersion)
+	accessToken, err := server.jwtService.CreateToken(acc.ID, acc.Role, security.AccessToken, acc.TokenVersion)
 	if err != nil {
 		server.logger.Error("GET /oauth2/callback: failed to create access token", "error", err)
 		ctx.JSON(http.StatusInternalServerError, ErrorResponse{"Internal server error"})
 		return
 	}
 
-	refreshToken, err := server.jwtService.CreateToken(acc.Username, acc.Role, security.RefreshToken, acc.TokenVersion)
+	refreshToken, err := server.jwtService.CreateToken(acc.ID, acc.Role, security.RefreshToken, acc.TokenVersion)
 	if err != nil {
 		server.logger.Error("GET /oauth2/callback: failed to create refresh token", "error", err)
 		ctx.JSON(http.StatusInternalServerError, ErrorResponse{"Internal server error"})

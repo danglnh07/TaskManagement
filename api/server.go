@@ -28,7 +28,22 @@ func NewServer(queries *db.Queries, logger *slog.Logger, config *util.Config) *S
 }
 
 func (server *Server) RegisterHandler() {
-	server.router.GET("/api/auth", server.HandleAuth)
+	// Group everything under the /api endpoint
+	api := server.router.Group("/api")
+	{
+		api.GET("/auth", server.HandleAuth)
+
+		// Task group
+		tasks := api.Group("/tasks", server.AuthMiddleware())
+		{
+			tasks.POST("", server.CreateTask)
+			tasks.GET("/:id", server.GetTask)
+			tasks.PUT("/:id", server.EditTask)
+			tasks.DELETE("/:id", server.DeleteTask)
+			tasks.PUT("/:id/status", server.SetTaskStatus)
+		}
+	}
+
 	server.router.GET("/oauth2/callback", server.HandleCallback)
 }
 

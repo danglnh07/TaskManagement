@@ -23,7 +23,7 @@ const (
 )
 
 type CustomClaims struct {
-	Username             string    `json:"username"`
+	ID                   uint      `json:"id"`
 	Role                 db.Role   `json:"role"`
 	TokenType            TokenType `json:"token_type"`
 	Version              int       `json:"version"`
@@ -36,7 +36,7 @@ func NewJWTService(config *util.Config) *JWTService {
 	}
 }
 
-func (service *JWTService) CreateToken(username string, role db.Role, tokenType TokenType, version int) (string, error) {
+func (service *JWTService) CreateToken(id uint, role db.Role, tokenType TokenType, version int) (string, error) {
 	// Check token type and decide expiration time based on type
 	var expiration time.Duration
 	switch tokenType {
@@ -50,13 +50,13 @@ func (service *JWTService) CreateToken(username string, role db.Role, tokenType 
 
 	// Create custom JWT claim
 	claims := CustomClaims{
-		Username:  string(username),
+		ID:        id,
 		Role:      role,
 		TokenType: tokenType,
 		Version:   version,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    Issuer,                                         // Who issue this token
-			Subject:   username,                                       // Whom the token is about
+			Subject:   fmt.Sprintf("%d", id),                          // Whom the token is about
 			IssuedAt:  jwt.NewNumericDate(time.Now()),                 // When the token is created
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiration)), // When the token is expired
 		},
