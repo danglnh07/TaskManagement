@@ -36,9 +36,6 @@ jobs:
       with:
         go-version: '1.24.6'
 
-    - name: Create database
-      run: make createdb
-
     - name: Build
       run: go build -v ./...
 
