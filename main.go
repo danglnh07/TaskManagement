@@ -32,7 +32,7 @@ func main() {
 	logger.Info("Initialize database successfully")
 
 	// Initialize server and run
-	server := api.NewServer(logger, config)
+	server := api.NewServer(queries, logger, config)
 	if err := server.Start(); err != nil {
 		logger.Error("Failed to start server or server shutdown unexpectedly", "error", err)
 		os.Exit(1)

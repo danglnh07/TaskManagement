@@ -7,7 +7,7 @@ import (
 )
 
 type Queries struct {
-	db     *gorm.DB
+	DB     *gorm.DB
 	config *util.Config
 }
 
@@ -19,10 +19,10 @@ func NewQueries(config *util.Config) *Queries {
 
 func (q *Queries) ConnectDB() error {
 	var err error
-	q.db, err = gorm.Open(postgres.Open(q.config.DBConn), &gorm.Config{})
+	q.DB, err = gorm.Open(postgres.Open(q.config.DBConn), &gorm.Config{})
 	return err
 }
 
 func (q *Queries) AutoMigration() error {
-	return q.db.AutoMigrate(&Account{}, &Task{})
+	return q.DB.AutoMigrate(&Account{}, &Task{})
 }
