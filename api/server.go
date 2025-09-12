@@ -4,9 +4,12 @@ import (
 	"log/slog"
 
 	"github.com/danglnh07/TaskManagement/db"
+	_ "github.com/danglnh07/TaskManagement/docs"
 	"github.com/danglnh07/TaskManagement/service/security"
 	"github.com/danglnh07/TaskManagement/util"
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 type Server struct {
@@ -34,17 +37,21 @@ func (server *Server) RegisterHandler() {
 		api.GET("/auth", server.HandleAuth)
 
 		// Task group
-		tasks := api.Group("/tasks", server.AuthMiddleware())
+		tasks := api.Group("/tasks", server.AuthMiddleware(), server.UserMiddleware())
 		{
 			tasks.POST("", server.CreateTask)
 			tasks.GET("/:id", server.GetTask)
 			tasks.PUT("/:id", server.EditTask)
 			tasks.DELETE("/:id", server.DeleteTask)
 			tasks.PUT("/:id/status", server.SetTaskStatus)
+			tasks.GET("", server.ListTasks)
 		}
 	}
 
 	server.router.GET("/oauth2/callback", server.HandleCallback)
+
+	// Swagger docs
+	server.router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 }
 
 func (server *Server) Start() error {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/danglnh07/TaskManagement/db"
+	"github.com/danglnh07/TaskManagement/service/security"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -43,6 +44,21 @@ func (server *Server) AuthMiddleware() gin.HandlerFunc {
 
 		// If match, put the claims into the context and forward to the next handler
 		ctx.Set(claimsKey, claims)
+		ctx.Next()
+	}
+}
+
+func (server *Server) UserMiddleware() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		// Get the claims from context
+		claims, _ := ctx.Get(claimsKey)
+
+		// Check if the role is user
+		if claims.(*security.CustomClaims).Role != db.User {
+			ctx.AbortWithStatusJSON(http.StatusForbidden, ErrorResponse{"Only user can access these routes"})
+			return
+		}
+
 		ctx.Next()
 	}
 }
