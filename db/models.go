@@ -29,7 +29,10 @@ type Account struct {
 	Role            Role          `json:"role"`
 	OauthProvider   OAuthProvider `json:"oauth_provider"`
 	OauthProviderID string        `json:"oauth_provider_id"`
-	TokenVersion    int           `json:"token_version"`
+	AccessToken     string        `json:"access_token"`
+	RefreshToken    string        `json:"refresh_token"`
+	ExpiredAt       time.Time     `json:"expired_at"`
+	JWTTokenVersion int           `json:"jwt_token_version"`
 	Tasks           []Task        `json:"tasks" gorm:"foreignKey:IssuerID"`
 }
 
@@ -41,4 +44,5 @@ type Task struct {
 	Category    string    `json:"category"`
 	Deadline    time.Time `json:"deadline"`
 	Status      Status    `json:"status"`
+	EventID     string    `json:"event_id"`
 }

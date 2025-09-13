@@ -24,12 +24,14 @@ type CreateTaskRequest struct {
 
 // Response struct for task (used across all actions)
 type TaskResponse struct {
-	ID          uint      `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Category    string    `json:"category"`
-	Deadline    time.Time `json:"deadline"`
-	Status      db.Status `json:"status"`
+	ID          uint   `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Category    string `json:"category"`
+	// Deadline should always be in UTC (ISO 8601 format, with "Z" suffix)
+	// Example: 2025-09-13T16:00:00Z
+	Deadline time.Time `json:"deadline"`
+	Status   db.Status `json:"status"`
 }
 
 // CreateTask godoc
@@ -93,6 +95,13 @@ func (server *Server) CreateTask(ctx *gin.Context) {
 	})
 
 	// Set up schedule jobs
+	err := server.calendar.CreateEvent(&task)
+	if err != nil {
+		server.logger.Error("POST /api/tasks: failed to create Google Calendar event", "error", err)
+		ctx.JSON(http.StatusInternalServerError, ErrorResponse{"Internal server error"})
+		return
+	}
+	server.logger.Info("POST /api/tasks: create calendar event successfully")
 }
 
 // Request struct for edit task action
@@ -185,7 +194,14 @@ func (server *Server) EditTask(ctx *gin.Context) {
 		Status:      task.Status,
 	})
 
-	// Set up schedule jobs
+	// Update event in Google Calendar
+	err := server.calendar.UpdateEvent(&task)
+	if err != nil {
+		server.logger.Error("PUT /api/tasks/:id: failed to update calendar event", "error", err)
+		ctx.JSON(http.StatusInternalServerError, ErrorResponse{"Internal server error"})
+		return
+	}
+	server.logger.Info("PUT /api/tasks/:id: update calendar successfully")
 }
 
 // GetTask godoc

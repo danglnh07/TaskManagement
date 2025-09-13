@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/danglnh07/TaskManagement/db"
 	"github.com/danglnh07/TaskManagement/service/security"
@@ -21,9 +22,12 @@ type OAuthState struct {
 }
 
 type TokenResponse struct {
-	AccessToken string `json:"access_token"`
-	TokenType   string `json:"token_type"`
-	Scope       string `json:"scope"`
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int    `json:"expires_in"`
+	TokenType    string `json:"token_type"`
+	IDToken      string `json:"id_token"`
+	Scope        string `json:"scope"`
 }
 
 type UserData struct {
@@ -71,7 +75,9 @@ func (server *Server) HandleAuth(ctx *gin.Context) {
 		query.Set("client_id", server.config.GoogleClientID)
 		query.Set("redirect_uri", fmt.Sprintf("%s/oauth2/callback", server.config.BaseURL))
 		query.Set("response_type", "code")
-		query.Set("scope", "openid email profile")
+		query.Set("scope", "openid email profile https://www.googleapis.com/auth/calendar.events")
+		query.Set("access-type", "offline")
+		query.Set("prompt", "consent")
 		query.Set("state", stateStr)
 		url.RawQuery = query.Encode()
 
@@ -177,7 +183,10 @@ func (server *Server) HandleCallback(ctx *gin.Context) {
 		acc.Role = state.Role
 		acc.OauthProvider = db.OAuthProvider(provider.Name())
 		acc.OauthProviderID = data.ID
-		acc.TokenVersion = 1
+		acc.AccessToken = tokenResp.AccessToken
+		acc.RefreshToken = tokenResp.RefreshToken
+		acc.ExpiredAt = time.Now().Add(time.Second * time.Duration(tokenResp.ExpiresIn))
+		acc.JWTTokenVersion = 1
 
 		result := server.queries.DB.Create(&acc)
 
@@ -189,14 +198,14 @@ func (server *Server) HandleCallback(ctx *gin.Context) {
 	}
 
 	// Create access token and refresh token
-	accessToken, err := server.jwtService.CreateToken(acc.ID, acc.Role, security.AccessToken, acc.TokenVersion)
+	accessToken, err := server.jwtService.CreateToken(acc.ID, acc.Role, security.AccessToken, acc.JWTTokenVersion)
 	if err != nil {
 		server.logger.Error("GET /oauth2/callback: failed to create access token", "error", err)
 		ctx.JSON(http.StatusInternalServerError, ErrorResponse{"Internal server error"})
 		return
 	}
 
-	refreshToken, err := server.jwtService.CreateToken(acc.ID, acc.Role, security.RefreshToken, acc.TokenVersion)
+	refreshToken, err := server.jwtService.CreateToken(acc.ID, acc.Role, security.RefreshToken, acc.JWTTokenVersion)
 	if err != nil {
 		server.logger.Error("GET /oauth2/callback: failed to create refresh token", "error", err)
 		ctx.JSON(http.StatusInternalServerError, ErrorResponse{"Internal server error"})

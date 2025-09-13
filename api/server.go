@@ -5,6 +5,7 @@ import (
 
 	"github.com/danglnh07/TaskManagement/db"
 	_ "github.com/danglnh07/TaskManagement/docs"
+	"github.com/danglnh07/TaskManagement/service/event"
 	"github.com/danglnh07/TaskManagement/service/security"
 	"github.com/danglnh07/TaskManagement/util"
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,7 @@ type Server struct {
 	router     *gin.Engine
 	queries    *db.Queries
 	jwtService *security.JWTService
+	calendar   event.EventScheduler
 	logger     *slog.Logger
 	config     *util.Config
 }
@@ -25,6 +27,7 @@ func NewServer(queries *db.Queries, logger *slog.Logger, config *util.Config) *S
 		router:     gin.Default(),
 		queries:    queries,
 		jwtService: security.NewJWTService(config),
+		calendar:   event.NewGoogleCalendarManager(queries, config),
 		logger:     logger,
 		config:     config,
 	}

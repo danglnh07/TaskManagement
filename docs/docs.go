@@ -433,6 +433,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "deadline": {
+                    "description": "Deadline should always be in UTC (ISO 8601 format, with \"Z\" suffix)\nExample: 2025-09-13T16:00:00Z",
                     "type": "string"
                 },
                 "description": {

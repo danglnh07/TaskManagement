@@ -37,7 +37,7 @@ func (server *Server) AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		if claims.Version != account.TokenVersion {
+		if claims.Version != account.JWTTokenVersion {
 			ctx.AbortWithStatusJSON(http.StatusUnauthorized, ErrorResponse{"Invalid token: token version not match"})
 			return
 		}
