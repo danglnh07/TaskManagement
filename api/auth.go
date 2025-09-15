@@ -1,0 +1,221 @@
+package api
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/danglnh07/TaskManagement/db"
+	"github.com/danglnh07/TaskManagement/service/security"
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+)
+
+type OAuthState struct {
+	Provider db.OAuthProvider
+	Role     db.Role
+}
+
+type TokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int    `json:"expires_in"`
+	TokenType    string `json:"token_type"`
+	IDToken      string `json:"id_token"`
+	Scope        string `json:"scope"`
+}
+
+type UserData struct {
+	ID       string
+	Username string
+	Email    string
+}
+
+type OAuthProvider interface {
+	Name() string
+	ExchangeToken(code string) (*TokenResponse, error)
+	FetchUser(token string) (*UserData, error)
+}
+
+func (server *Server) HandleAuth(ctx *gin.Context) {
+	// Get which OAuth provider
+	provider := db.OAuthProvider(ctx.Query("provider"))
+	role := db.Role(ctx.Query("role"))
+
+	// Build the state for OAuth
+	state := OAuthState{
+		Provider: provider,
+		Role:     role,
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		server.logger.Error("GET /api/auth: failed to marshal state data", "error", err)
+		ctx.JSON(http.StatusInternalServerError, ErrorResponse{"Internal server error"})
+		return
+	}
+	stateStr := base64.URLEncoding.EncodeToString(data)
+
+	// Based on which provider, construct the URL corresponding
+	switch provider {
+	case db.Google:
+		// Construct the URL
+		url := &url.URL{
+			Scheme: "https",
+			Host:   "accounts.google.com",
+			Path:   "/o/oauth2/v2/auth",
+		}
+
+		// Add query parameters
+		query := url.Query()
+		query.Set("client_id", server.config.GoogleClientID)
+		query.Set("redirect_uri", fmt.Sprintf("%s/oauth2/callback", server.config.BaseURL))
+		query.Set("response_type", "code")
+		query.Set("scope", "openid email profile https://www.googleapis.com/auth/calendar.events")
+		query.Set("access-type", "offline")
+		query.Set("prompt", "consent")
+		query.Set("state", stateStr)
+		url.RawQuery = query.Encode()
+
+		// Redirect the client to the real Google OAuth
+		ctx.Redirect(http.StatusFound, url.String())
+	case db.GitHub:
+		// Construct the URL
+		url := &url.URL{
+			Scheme: "https",
+			Host:   "github.com",
+			Path:   "/login/oauth/authorize",
+		}
+
+		// Add query parameters
+		query := url.Query()
+		query.Set("client_id", server.config.GithubClientID)
+		query.Set("redirect_uri", fmt.Sprintf("%s/oauth2/callback", server.config.BaseURL))
+		query.Set("scope", "read:user+user:email")
+		query.Set("state", stateStr)
+		url.RawQuery = query.Encode()
+
+		// Redirect the client to the real GitHub OAuth
+		ctx.Redirect(http.StatusFound, url.String())
+	default:
+		ctx.JSON(http.StatusBadRequest, ErrorResponse{fmt.Sprintf("Unsupported OAuth2 provider: %s", provider)})
+	}
+}
+
+type AuthResponse struct {
+	ID           uint   `json:"id"`
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+}
+
+func (server *Server) HandleCallback(ctx *gin.Context) {
+	// Get the state and parse it
+	stateRaw := ctx.Query("state")
+	bytes, err := base64.URLEncoding.DecodeString(stateRaw)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, ErrorResponse{"Invalid state"})
+		return
+	}
+	var state OAuthState
+	if err = json.Unmarshal(bytes, &state); err != nil {
+		ctx.JSON(http.StatusBadRequest, ErrorResponse{"Invalid state"})
+		return
+	}
+
+	// Build OAuth provider based on state.Provider
+	var provider OAuthProvider
+	switch state.Provider {
+	case db.Google:
+		provider = &GoogleProvider{
+			ClientID:     server.config.GoogleClientID,
+			ClientSecret: server.config.GoogleClientSecret,
+			BaseURL:      server.config.BaseURL,
+		}
+	case db.GitHub:
+		provider = &GitHubProvider{
+			ClientID:     server.config.GithubClientID,
+			ClientSecret: server.config.GithubClientSecret,
+		}
+	default:
+		ctx.JSON(http.StatusBadRequest, ErrorResponse{"Invalid state"})
+		return
+	}
+
+	// Get the code return by OAuth provider
+	code := ctx.Query("code")
+	if code = strings.TrimSpace(code); code == "" {
+		ctx.JSON(http.StatusBadRequest, ErrorResponse{"Invalid code"})
+		return
+	}
+
+	// Exchange code token
+	tokenResp, err := provider.ExchangeToken(code)
+	if err != nil {
+		server.logger.Error("GET /oauth2/callback: failed to exchange code for token", "error", err)
+		ctx.JSON(http.StatusInternalServerError, ErrorResponse{"Internal server error"})
+		return
+	}
+
+	// Fetch user data using token
+	data, err := provider.FetchUser(tokenResp.AccessToken)
+	if err != nil {
+		server.logger.Error("GET /oauth2/callback: failed to fetch user data from OAuth provider", "error", err)
+		ctx.JSON(http.StatusInternalServerError, ErrorResponse{"Internal server error"})
+		return
+	}
+
+	// Check if user is not registered
+	// Here, we don't use username as the condition, since username in OAuth provider can be the same
+	// or the client just login into using different social account
+	var acc db.Account
+	result := server.queries.DB.
+		Where("oauth_provider = ? AND oauth_provider_id = ?", provider.Name(), data.ID).
+		First(&acc)
+
+	// Here, if no record found, then we register new account into the system
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		acc.Username = data.Username
+		acc.Email = data.Email
+		acc.Role = state.Role
+		acc.OauthProvider = db.OAuthProvider(provider.Name())
+		acc.OauthProviderID = data.ID
+		acc.AccessToken = tokenResp.AccessToken
+		acc.RefreshToken = tokenResp.RefreshToken
+		acc.ExpiredAt = time.Now().Add(time.Second * time.Duration(tokenResp.ExpiresIn))
+		acc.JWTTokenVersion = 1
+
+		result := server.queries.DB.Create(&acc)
+
+		if result.Error != nil {
+			server.logger.Error("GET /oauth2/callback: failed to create account", "error", err)
+			ctx.JSON(http.StatusInternalServerError, ErrorResponse{"Internal server error"})
+			return
+		}
+	}
+
+	// Create access token and refresh token
+	accessToken, err := server.jwtService.CreateToken(acc.ID, acc.Role, security.AccessToken, acc.JWTTokenVersion)
+	if err != nil {
+		server.logger.Error("GET /oauth2/callback: failed to create access token", "error", err)
+		ctx.JSON(http.StatusInternalServerError, ErrorResponse{"Internal server error"})
+		return
+	}
+
+	refreshToken, err := server.jwtService.CreateToken(acc.ID, acc.Role, security.RefreshToken, acc.JWTTokenVersion)
+	if err != nil {
+		server.logger.Error("GET /oauth2/callback: failed to create refresh token", "error", err)
+		ctx.JSON(http.StatusInternalServerError, ErrorResponse{"Internal server error"})
+		return
+	}
+
+	// Return the data back to client
+	ctx.JSON(http.StatusOK, AuthResponse{
+		ID:           acc.ID,
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+	})
+}

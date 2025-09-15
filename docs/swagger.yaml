@@ -1,0 +1,315 @@
+definitions:
+  api.CreateTaskRequest:
+    properties:
+      category:
+        type: string
+      deadline:
+        description: This value is fixed in Go, cannot change to other
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+    required:
+    - category
+    - deadline
+    - description
+    - name
+    type: object
+  api.EditTaskRequest:
+    properties:
+      category:
+        type: string
+      deadline:
+        description: This value is fixed in Go, cannot change to other
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+    type: object
+  api.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  api.ListTasksResponse:
+    properties:
+      tasks:
+        items:
+          $ref: '#/definitions/api.TaskResponse'
+        type: array
+      total:
+        description: Here, total is the total of the tasks in database for that account,
+          it's not equal to the len of tasks
+        type: integer
+    type: object
+  api.TaskResponse:
+    properties:
+      category:
+        type: string
+      deadline:
+        description: |-
+          Deadline should always be in UTC (ISO 8601 format, with "Z" suffix)
+          Example: 2025-09-13T16:00:00Z
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      status:
+        $ref: '#/definitions/db.Status'
+    type: object
+  api.TaskStatusRequest:
+    properties:
+      status:
+        $ref: '#/definitions/db.Status'
+    required:
+    - status
+    type: object
+  db.Status:
+    enum:
+    - incomplete
+    - complete
+    - cancel
+    type: string
+    x-enum-varnames:
+    - Incomplete
+    - Complete
+    - Cancel
+info:
+  contact: {}
+paths:
+  /api/tasks:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves a paginated list of tasks for the authenticated user.
+      parameters:
+      - description: Number of tasks per page (1-100)
+        in: query
+        name: page_size
+        required: true
+        type: integer
+      - description: Page index (0-based)
+        in: query
+        name: page_index
+        required: true
+        type: integer
+      - description: Filter tasks by status. If omitted, return all tasks
+        enum:
+        - incomplete
+        - complete
+        - cancel
+        in: query
+        name: filter
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.ListTasksResponse'
+        "400":
+          description: Invalid request parameters
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List tasks
+      tags:
+      - tasks
+    post:
+      consumes:
+      - application/json
+      description: Creates a new task owned by the authenticated user. The deadline
+        must be at least 15 minutes in the future.
+      parameters:
+      - description: Task details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.CreateTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Task created successfully
+          schema:
+            $ref: '#/definitions/api.TaskResponse'
+        "400":
+          description: Invalid request body or invalid deadline
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a new task
+      tags:
+      - tasks
+  /api/tasks/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a specific task by its ID. Only the owner of the task can
+        perform this action.
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Task delete successfully
+          schema:
+            type: string
+        "400":
+          description: No such task with this ID for deleting
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: You are not the owner of this task
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a task
+      tags:
+      - tasks
+    get:
+      consumes:
+      - application/json
+      description: Retrieves details of a specific task by its ID.
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Task retrieved successfully
+          schema:
+            $ref: '#/definitions/api.TaskResponse'
+        "404":
+          description: Task not found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get a task by ID
+      tags:
+      - tasks
+    put:
+      consumes:
+      - application/json
+      description: Updates the fields of an existing task. Only the task owner can
+        edit it. Any provided deadline must be at least 15 minutes in the future.
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Updated task details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.EditTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Task updated successfully
+          schema:
+            $ref: '#/definitions/api.TaskResponse'
+        "400":
+          description: Invalid request body or task not found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: User is not the owner of the task
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Edit an existing task
+      tags:
+      - tasks
+  /api/tasks/{id}/status:
+    put:
+      consumes:
+      - application/json
+      description: Updates the status of a specific task by its ID. Only the owner
+        of the task can perform this action.
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Task status payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.TaskStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Task status updated successfully
+          schema:
+            $ref: '#/definitions/api.TaskResponse'
+        "400":
+          description: Invalid JSON data or invalid status value
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: You are not the owner of this task
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update task status
+      tags:
+      - tasks
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
