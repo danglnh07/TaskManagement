@@ -62,7 +62,7 @@ func (server *Server) CreateTask(ctx *gin.Context) {
 		return
 	}
 
-	// Get the ID from claims
+	// Get the account ID from claims
 	claims, _ := ctx.Get(claimsKey)
 	id := claims.(*security.CustomClaims).ID
 
@@ -94,11 +94,9 @@ func (server *Server) CreateTask(ctx *gin.Context) {
 		Status:      task.Status,
 	})
 
-	// Set up schedule jobs
 	err := server.calendar.CreateEvent(&task)
 	if err != nil {
 		server.logger.Error("POST /api/tasks: failed to create Google Calendar event", "error", err)
-		ctx.JSON(http.StatusInternalServerError, ErrorResponse{"Internal server error"})
 		return
 	}
 	server.logger.Info("POST /api/tasks: create calendar event successfully")
@@ -198,7 +196,6 @@ func (server *Server) EditTask(ctx *gin.Context) {
 	err := server.calendar.UpdateEvent(&task)
 	if err != nil {
 		server.logger.Error("PUT /api/tasks/:id: failed to update calendar event", "error", err)
-		ctx.JSON(http.StatusInternalServerError, ErrorResponse{"Internal server error"})
 		return
 	}
 	server.logger.Info("PUT /api/tasks/:id: update calendar successfully")
